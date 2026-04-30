@@ -3,7 +3,7 @@
 // Caches the app shell for offline use.
 // ============================================================
 
-const CACHE = "mdb-v2";
+const CACHE = "mdb-v3";
 const ASSETS = [
   "/",
   "/index.html",
@@ -25,7 +25,7 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// Network-first for navigation; cache-first for assets
+// Network-first for navigation and assets (prevents stale app bundles)
 self.addEventListener("fetch", (e) => {
   const { request } = e;
   if (request.method !== "GET") return;
@@ -38,17 +38,16 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Cache-first for JS/CSS/fonts/images
+  // Network-first for JS/CSS/fonts/images with cache fallback
   e.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((res) => {
+    fetch(request)
+      .then((res) => {
         if (res.ok) {
           const clone = res.clone();
           caches.open(CACHE).then((c) => c.put(request, clone));
         }
         return res;
-      });
-    })
+      })
+      .catch(() => caches.match(request))
   );
 });

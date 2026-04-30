@@ -193,17 +193,111 @@ const loadDaily    = () => loadJSON(LS_DAILY, {});
 const loadVoices   = () => loadJSON(LS_VOICES, {});
 
 // ============================================================
-// 🔊 TEMPORARY AUDIO PLAYBACK
+// 🔊 TIMESTAMPED AUDIO PLAYBACK
 // ============================================================
-function playTestAudio() {
-  console.log("Playing test audio: /audio/words.m4a");
-  const audio = new Audio("/audio/words.m4a");
-  audio.volume = 1;
-  audio.play().catch((error) => {
+const AUDIO_FILE = "/audio/words.m4a";
+const activeClipAudio = new Audio(AUDIO_FILE);
+activeClipAudio.preload = "auto";
+activeClipAudio.load();
+let activeClipTimer = null;
+
+function stopAudioClip() {
+  if (activeClipTimer) {
+    clearInterval(activeClipTimer);
+    activeClipTimer = null;
+  }
+  activeClipAudio.pause();
+}
+
+function playAudioClip(start, end) {
+  if (typeof start !== "number" || typeof end !== "number") {
+    alert("לא נמצא טיימסטמפ לקטע הזה ב-audio_timestamps.json");
+    return;
+  }
+
+  stopAudioClip();
+  activeClipAudio.volume = 1;
+  activeClipAudio.currentTime = start;
+  activeClipAudio.play().catch((error) => {
     console.error("Audio failed:", error);
     alert("האודיו לא נטען. בדוק שהקובץ נמצא ב-public/audio/words.m4a");
   });
+
+  activeClipTimer = setInterval(() => {
+    if (activeClipAudio.currentTime >= end || activeClipAudio.paused || activeClipAudio.ended) {
+      activeClipAudio.pause();
+      clearInterval(activeClipTimer);
+      activeClipTimer = null;
+    }
+  }, 50);
 }
+
+const getTimestampRange = (entry, level) => {
+  if (!entry) return { audioStart: null, audioEnd: null };
+
+  const levelKeys = level === 1
+    ? ["word", "level1", "1"]
+    : level === 2
+      ? ["level2", "phrase", "2"]
+      : ["level3", "sentence", "3"];
+
+  for (const key of levelKeys) {
+    const value = entry[key];
+    if (!value) continue;
+    if (typeof value.audioStart === "number" && typeof value.audioEnd === "number") {
+      return { audioStart: value.audioStart, audioEnd: value.audioEnd };
+    }
+    if (typeof value.start === "number" && typeof value.end === "number") {
+      return { audioStart: value.start, audioEnd: value.end };
+    }
+  }
+
+  if (level === 1 && typeof entry.audioStart === "number" && typeof entry.audioEnd === "number") {
+    return { audioStart: entry.audioStart, audioEnd: entry.audioEnd };
+  }
+
+  return { audioStart: null, audioEnd: null };
+};
+
+const normalizeAudioTimestamps = (rawTimestamps) => {
+  if (Array.isArray(rawTimestamps)) {
+    const normalized = {};
+    const flatWords = Object.values(WORD_DATA).flat();
+
+    flatWords.forEach((word, index) => {
+      const base = index * 3;
+      const wordClip = rawTimestamps[base];
+      const level2Clip = rawTimestamps[base + 1];
+      const level3Clip = rawTimestamps[base + 2];
+
+      normalized[word.id] = {
+        word: wordClip ? { start: wordClip.start, end: wordClip.end } : null,
+        level2: level2Clip ? { start: level2Clip.start, end: level2Clip.end } : null,
+        level3: level3Clip ? { start: level3Clip.start, end: level3Clip.end } : null,
+      };
+    });
+
+    return normalized;
+  }
+
+  return rawTimestamps || {};
+};
+
+const attachAudioRanges = (words, timestamps) => words.map((word) => {
+  const entry = timestamps[word.id];
+  const level1 = getTimestampRange(entry, 1);
+  const level2 = getTimestampRange(entry, 2);
+  const level3 = getTimestampRange(entry, 3);
+  return {
+    ...word,
+    audioStart: level1.audioStart,
+    audioEnd: level1.audioEnd,
+    level2AudioStart: level2.audioStart,
+    level2AudioEnd: level2.audioEnd,
+    level3AudioStart: level3.audioStart,
+    level3AudioEnd: level3.audioEnd,
+  };
+});
 
 // ============================================================
 // 🎙️ PARENT VOICE — recorded phrases stored as base64 audio
@@ -220,7 +314,7 @@ const PARENT_PHRASES = [
 const playParentVoice = (key, fallback) => {
   const v = loadVoices();
   if (v[key]) { try { new Audio(v[key]).play(); return; } catch {} }
-  playTestAudio();
+  playAudioClip(0, 1);
 };
 
 // ============================================================
@@ -394,7 +488,7 @@ const ParentVoicePanel = ({ onClose }) => {
   const playRec = (key, label) => {
     const v = loadVoices();
     if (v[key]) { try { new Audio(v[key]).play(); return; } catch {} }
-    playTestAudio();
+    playAudioClip(0, 1);
   };
 
   return (
@@ -483,7 +577,12 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
     setSrSuggest(false);
     setHasPlayed(false);
     setMascotState("idle");
+    return () => { stopAudioClip(); };
   }, [item.id, level]);
+
+  const playCurrentPhrase = useCallback(() => {
+    playAudioClip(item.audioStart, item.audioEnd);
+  }, [item.audioStart, item.audioEnd]);
 
   const prompt = useCallback(() => {
     setWaitingParent(false);
@@ -491,8 +590,8 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
     setSrSuggest(false);
     setHasPlayed(true);
     setMascotState("idle");
-    playTestAudio();
-  }, [current, setMascotState]);
+    playCurrentPhrase();
+  }, [playCurrentPhrase, setMascotState]);
 
   const startListen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -601,19 +700,9 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
       {/* Action buttons (after first play) */}
       {hasPlayed && !waitingParent && (
         <div style={{ display:"flex",gap:"10px",flexWrap:"wrap",justifyContent:"center",width:"100%" }}>
-          <button onClick={playTestAudio} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
+          <button onClick={playCurrentPhrase} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
           <button onClick={startListen}  style={btn("#C77DFF","#fff")}>🎤 דיברתי</button>
         </div>
-      )}
-
-      {!waitingParent && (
-        <button onClick={playTestAudio} style={{
-          ...btn("#FF6B9D","#fff","1.2rem"),
-          width:"100%",
-          maxWidth:"360px",
-          padding:"18px 20px",
-          animation:"pulse 1.8s ease infinite",
-        }}>בדיקת שמע</button>
       )}
 
       {/* ★ PARENT DECISION ZONE — clearly highlighted */}
@@ -835,13 +924,29 @@ export default function App() {
   const [showSettings,    setShowSettings]   = useState(false);
   const [showVoices,      setShowVoices]     = useState(false);
   const [showDailyDone,   setShowDailyDone]  = useState(false);
+  const [audioTimestamps, setAudioTimestamps] = useState({});
   const [dailySuccesses,  setDailySuccesses] = useState(() => {
     const d = loadDaily(); return d[todayKey()] || 0;
   });
 
+  useEffect(() => {
+    fetch("/audio/audio_timestamps.json")
+      .then((res) => {
+        if (!res.ok) throw new Error("Missing audio_timestamps.json");
+        return res.json();
+      })
+      .then((data) => setAudioTimestamps(normalizeAudioTimestamps(data)))
+      .catch((error) => console.warn("Audio timestamps not loaded:", error));
+  }, []);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    setItems((prev) => attachAudioRanges(prev, audioTimestamps));
+  }, [audioTimestamps]);
+
   const selectCategory = (cat) => {
     setCategory(cat);
-    setItems(buildSession(WORD_DATA[cat]));
+    setItems(buildSession(attachAudioRanges(WORD_DATA[cat], audioTimestamps)));
     setItemIndex(0); setLevel(1); setMiniStars(0); setSessProgress(0);
     setScreen("practice");
   };
@@ -849,7 +954,7 @@ export default function App() {
   const handleCorrect = () => setFeedback("correct");
   const handleAlmost  = () => setFeedback("almost");
   const handleRetry   = () => {
-    playTestAudio();
+    stopAudioClip();
   };
 
   const handleFeedbackDone = () => {
@@ -872,7 +977,7 @@ export default function App() {
       else {
         setLevel(1);
         if (itemIndex + 1 >= items.length) {
-          setItems(buildSession(WORD_DATA[category])); setItemIndex(0);
+          setItems(buildSession(attachAudioRanges(WORD_DATA[category], audioTimestamps))); setItemIndex(0);
         } else {
           setItemIndex(i => i + 1);
         }
@@ -883,7 +988,20 @@ export default function App() {
     setFeedback(null);
   };
 
-  const currentItem = items[itemIndex];
+  const currentBaseItem = items[itemIndex];
+  const currentItem = currentBaseItem ? {
+    ...currentBaseItem,
+    audioStart: level === 1
+      ? currentBaseItem.audioStart
+      : level === 2
+        ? currentBaseItem.level2AudioStart
+        : currentBaseItem.level3AudioStart,
+    audioEnd: level === 1
+      ? currentBaseItem.audioEnd
+      : level === 2
+        ? currentBaseItem.level2AudioEnd
+        : currentBaseItem.level3AudioEnd,
+  } : null;
 
   return (
     <div style={{
