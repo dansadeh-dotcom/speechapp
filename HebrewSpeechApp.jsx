@@ -201,33 +201,36 @@ const loadVoices   = () => loadJSON(LS_VOICES, {});
 //   1. Record: for each word in order → word alone, level2 phrase, level3 sentence
 //   2. Run timestamp extraction → save as public/audio/<slug>_timestamps.json
 //   3. Save the recording as public/audio/<slug>.m4a
+// Maps each category to a path prefix for its audio + timestamps files.
+// Flat file: prefix = "/audio/slug"       → /audio/slug.m4a + /audio/slug_timestamps.json
+// Subfolder: prefix = "/audio/slug/slug"  → /audio/slug/slug.m4a + /audio/slug/slug_timestamps.json
 const CATEGORY_AUDIO = {
-  "חיות":        "animals",
-  "כלי מטבח":   "kitchen",
-  "צבעים":       "colors",
-  "מספרים":      "numbers",
-  "כלי תחבורה": "transport",
-  "אוכל":        "food",
-  "פירות":       "fruits",
-  "ירקות":       "vegetables",
-  "משפחה":       "family",
-  "פעולות":      "actions",
+  "חיות":        "/audio/animals",
+  "כלי מטבח":   "/audio/kitchen",
+  "צבעים":       "/audio/colors/colors",
+  "מספרים":      "/audio/numbers",
+  "כלי תחבורה": "/audio/transport",
+  "אוכל":        "/audio/food",
+  "פירות":       "/audio/fruits",
+  "ירקות":       "/audio/vegetables",
+  "משפחה":       "/audio/family",
+  "פעולות":      "/audio/actions",
 };
 
-let _audioElements = {}; // slug → Audio element
+let _audioElements = {}; // prefix → Audio element
 let _fileClipTimer = null;
 
-function getAudioElement(slug) {
-  if (!_audioElements[slug]) {
-    _audioElements[slug] = new Audio(`/audio/${slug}.m4a`);
-    _audioElements[slug].preload = "auto";
+function getAudioElement(prefix) {
+  if (!_audioElements[prefix]) {
+    _audioElements[prefix] = new Audio(`${prefix}.m4a`);
+    _audioElements[prefix].preload = "auto";
   }
-  return _audioElements[slug];
+  return _audioElements[prefix];
 }
 
-function primeAudio(slug) {
-  if (!slug) return;
-  const a = getAudioElement(slug);
+function primeAudio(prefix) {
+  if (!prefix) return;
+  const a = getAudioElement(prefix);
   a.muted = true;
   const p = a.play();
   if (p) p.then(() => { a.pause(); a.muted = false; }).catch(() => {});
@@ -239,9 +242,9 @@ function stopFileClip() {
   Object.values(_audioElements).forEach(a => { if (!a.paused) a.pause(); });
 }
 
-function playFileClip(start, end, slug) {
+function playFileClip(start, end, prefix) {
   stopFileClip();
-  const audio = getAudioElement(slug);
+  const audio = getAudioElement(prefix);
   audio.muted = false;
   audio.volume = 1;
   audio.currentTime = start;
@@ -296,25 +299,29 @@ const playParentVoice = (key, fallback) => {
 };
 
 // --- Timestamp helpers (generic, works for any category) ---
+// Handles both formats:
+//   • flat array:   [{id, start, end}, ...]  (animals)
+//   • wrapped dict: { clips: [{clip, start, end}, ...] }  (colors, etc.)
 const normalizeCategoryTimestamps = (raw, words) => {
+  const clips = Array.isArray(raw) ? raw : (raw.clips || []);
   const normalized = {};
   words.forEach((word, i) => {
     const b = i * 3;
     normalized[word.id] = {
-      word:   raw[b]   ? { start: raw[b].start,   end: raw[b].end   } : null,
-      level2: raw[b+1] ? { start: raw[b+1].start, end: raw[b+1].end } : null,
-      level3: raw[b+2] ? { start: raw[b+2].start, end: raw[b+2].end } : null,
+      word:   clips[b]   ? { start: clips[b].start,   end: clips[b].end   } : null,
+      level2: clips[b+1] ? { start: clips[b+1].start, end: clips[b+1].end } : null,
+      level3: clips[b+2] ? { start: clips[b+2].start, end: clips[b+2].end } : null,
     };
   });
   return normalized;
 };
 
-const attachCategoryAudioRanges = (words, timestamps, slug) => words.map(word => {
+const attachCategoryAudioRanges = (words, timestamps, prefix) => words.map(word => {
   const e = timestamps[word.id];
   if (!e) return word;
   return {
     ...word,
-    _audioSlug:       slug,
+    _audioSlug:       prefix,
     audioStart:       e.word?.start   ?? null,
     audioEnd:         e.word?.end     ?? null,
     level2AudioStart: e.level2?.start ?? null,
@@ -1003,7 +1010,7 @@ export default function App() {
 
     // Otherwise fetch them (or fall back to speechSynthesis if file missing)
     const fetchAndBuild = slug
-      ? fetch(`/audio/${slug}_timestamps.json`)
+      ? fetch(`${prefix}_timestamps.json`)
           .then(r => r.ok ? r.json() : Promise.reject())
           .then(data => {
             const normalized = normalizeCategoryTimestamps(data, WORD_DATA[cat]);
