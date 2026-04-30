@@ -194,35 +194,49 @@ const loadVoices   = () => loadJSON(LS_VOICES, {});
 
 // ============================================================
 // 🔊 SPEECH SYNTHESIS (TTS)
-// TO REPLACE WITH REAL AUDIO: see playParentVoice() below.
+// iOS Safari rules:
+//   1. speechSynthesis.speak() MUST be called synchronously inside
+//      a user-gesture handler (tap/click). It cannot be called from
+//      useEffect, setTimeout, or Promise callbacks.
+//   2. Voices are available immediately on iOS — no need to wait.
+//   3. Cancel before speaking to avoid queue buildup.
+//   4. Do NOT double-call: the voiceschanged + setTimeout pattern
+//      causes two utterances. We just call directly.
 // ============================================================
-let _voiceCache = null;
-const getHebVoice = () => {
-  if (_voiceCache) return _voiceCache;
-  const vv = window.speechSynthesis?.getVoices() || [];
-  _voiceCache = vv.find(v => v.lang.startsWith("he")) || vv[0] || null;
-  return _voiceCache;
-};
+const speak = (text, onEnd) => {
+  if (!window.speechSynthesis) { onEnd?.(); return; }
 
-// Primary TTS function — must be called from a direct user tap on iPhone Safari.
-const speakHebrew = (text, onEnd) => {
-  console.log("Trying to speak:", text);
-  console.log("speechSynthesis exists:", !!window.speechSynthesis);
-  if (!window.speechSynthesis) {
-    alert("הקול לא נתמך בדפדפן הזה");
-    onEnd?.();
-    return;
-  }
+  // Cancel any ongoing speech first
   window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "he-IL"; u.rate = 0.85; u.pitch = 1.1;
-  const v = getHebVoice(); if (v) u.voice = v;
-  u.onend = onEnd;
-  window.speechSynthesis.speak(u);
-};
 
-// Keep speak as an alias so existing internal callers still work.
-const speak = speakHebrew;
+  const fire = () => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang    = "he-IL";
+    u.rate    = 0.82;
+    u.pitch   = 1.05;
+    u.volume  = 1;
+
+    const voices = window.speechSynthesis.getVoices();
+    // Prefer Hebrew, fall back to Arabic (phonetically similar), then any voice
+    u.voice = voices.find(v => v.lang.startsWith("he"))
+           || voices.find(v => v.lang.startsWith("ar"))
+           || voices[0]
+           || null;
+
+    if (onEnd) u.onend = onEnd;
+    window.speechSynthesis.speak(u);
+  };
+
+  // On iOS voices are ready immediately after first page interaction.
+  // On Chrome desktop they may load async — handle both without double-firing.
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) {
+    fire();
+  } else {
+    // Only listen once — no setTimeout fallback to avoid double-speak
+    window.speechSynthesis.addEventListener("voiceschanged", fire, { once: true });
+  }
+};
 
 // ============================================================
 // 🎙️ PARENT VOICE — recorded phrases stored as base64 audio
@@ -374,6 +388,11 @@ const DailyMission = ({ successCount, onStart }) => {
           {done ? "כל הכבוד — תרגלת 5 מילים היום!" : `תרגלי ${DAILY_GOAL} מילים בהצלחה`}
         </div>
         <ProgressStars count={Math.min(successCount, DAILY_GOAL)} total={DAILY_GOAL} size="1.25rem" />
+        {!done && (
+          <button onClick={onStart} style={{ ...btn("#FF6B9D","#fff","1rem"), marginTop:"4px" }}>
+            🚀 התחילי עכשיו
+          </button>
+        )}
       </div>
     </div>
   );
@@ -472,12 +491,6 @@ const SettingsPanel = ({ settings, onSave, onClose, onVoices }) => {
         <Toggle on={local.speechRecog} onToggle={() => setLocal(p => ({ ...p, speechRecog:!p.speechRecog }))} />
       </div>
 
-      <button
-        onClick={() => speakHebrew("שלום! בואי נדבר בעברית")}
-        style={{ ...btn("#4D96FF","#fff","1rem"),width:"100%",borderRadius:"14px",marginBottom:"10px" }}
-      >
-        🔊 בדיקת קול
-      </button>
       <button onClick={onVoices} style={{ ...btn("#C77DFF","#fff","1rem"),width:"100%",borderRadius:"14px",marginBottom:"10px" }}>
         🎙️ הקלט קול הורה
       </button>
@@ -496,25 +509,46 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
   const [waitingParent, setWaitingParent] = useState(false);
   const [heardText,     setHeardText]     = useState(null);
   const [srSuggest,     setSrSuggest]     = useState(false);
+  const [hasPlayed,     setHasPlayed]     = useState(false); // tracks if user tapped play yet
   const [isFav,         setIsFav]         = useState(() => (loadStats()[item.id] || {}).favorite || false);
   const recRef  = useRef(null);
   const current = level === 1 ? item.word : level === 2 ? item.level2 : item.level3;
 
-  const prompt = useCallback(() => {
-    setWaitingParent(false); setHeardText(null); setSrSuggest(false);
-    setMascotState("idle");
-  }, [setMascotState]);
-
-  // Reset state when a new item loads, but do NOT auto-play — iPhone Safari blocks
-  // audio that wasn't triggered by a direct user tap.
+  // Reset state when card/level changes — no auto-speak (iOS blocks it)
   useEffect(() => {
-    prompt();
+    setWaitingParent(false);
+    setHeardText(null);
+    setSrSuggest(false);
+    setHasPlayed(false);
+    setMascotState("idle");
     return () => { window.speechSynthesis?.cancel(); };
-  }, [prompt]);
+  }, [item.id, level]);
+
+  // prompt() is always called from a tap — safe on iOS
+  const prompt = useCallback(() => {
+    setWaitingParent(false);
+    setHeardText(null);
+    setSrSuggest(false);
+    setHasPlayed(true);
+    setMascotState("idle");
+    speak(`תגידי: ${current}`);
+  }, [current, setMascotState]);
 
   const startListen = () => {
-    setMascotState("listening");
-    setWaitingParent(true);
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR || !settings.speechRecog) { setMascotState("listening"); setWaitingParent(true); return; }
+    const rec = new SR();
+    rec.lang = "he-IL"; rec.interimResults = false;
+    rec.onstart = () => setMascotState("listening");
+    rec.onend   = () => setWaitingParent(true);
+    rec.onresult = (e) => {
+      const said = e.results[0][0].transcript.trim();
+      setHeardText(said);
+      const target = current.replace(/[.,!?]/g,"");
+      if (said.includes(item.word) || target.includes(said.replace(/[.,!?]/g,""))) setSrSuggest(true);
+    };
+    rec.onerror = () => setWaitingParent(true);
+    rec.start(); recRef.current = rec;
   };
 
   const doCorrect = () => { setWaitingParent(false); setMascotState("excited"); onCorrect(); };
@@ -556,18 +590,14 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
         }}>❤️</button>
 
         {/* TO ADD REAL IMAGES: replace span with <img src={item.imageSrc} style={{width:160,height:160,objectFit:"contain"}} /> */}
-        <div style={{
-          fontSize:"1.05rem",fontWeight:700,color:"#aaa",
-          fontFamily:"'Varela Round',sans-serif",letterSpacing:"0.02em",
-        }}>תגידי:</div>
-        <div style={{
-          fontSize:"2.6rem",fontWeight:900,fontFamily:"'Varela Round',sans-serif",
-          textAlign:"center",color:"#FF6B9D",marginBottom:"4px",
-        }}>{current}</div>
         <span style={{ fontSize:"5.5rem",lineHeight:1,filter:"drop-shadow(0 4px 8px rgba(0,0,0,0.1))" }}>
           {item.emoji}
         </span>
-
+        <div style={{
+          fontSize:"2rem",fontWeight:900,fontFamily:"'Varela Round',sans-serif",textAlign:"center",
+          background:"linear-gradient(90deg,#FF6B9D,#FF6B35)",
+          WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+        }}>{current}</div>
         <div style={{
           fontSize:"0.9rem",color:"#bbb",
           background:"#f0f0f0",borderRadius:"20px",padding:"3px 13px",
@@ -589,11 +619,30 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
         </div>
       )}
 
-      {/* Action buttons (pre-decision) */}
-      {!waitingParent && (
+      {/* TAP TO HEAR — shown on new card before first tap (iOS can't auto-play) */}
+      {!hasPlayed && !waitingParent && (
+        <button onClick={prompt} style={{
+          width:"100%", maxWidth:"360px",
+          padding:"22px 20px",
+          borderRadius:"20px",
+          border:"3px dashed #4D96FF",
+          background:"linear-gradient(135deg,#EEF6FF,#f0f8ff)",
+          cursor:"pointer",
+          display:"flex", flexDirection:"column", alignItems:"center", gap:"8px",
+          animation:"pulse 1.8s ease infinite",
+          fontFamily:"'Varela Round',sans-serif",
+        }}>
+          <span style={{ fontSize:"2.8rem" }}>🔊</span>
+          <span style={{ fontSize:"1.3rem", fontWeight:900, color:"#4D96FF" }}>לחצי לשמוע</span>
+          <span style={{ fontSize:"0.85rem", color:"#aaa" }}>tap to hear the word</span>
+        </button>
+      )}
+
+      {/* Action buttons (after first play) */}
+      {hasPlayed && !waitingParent && (
         <div style={{ display:"flex",gap:"10px",flexWrap:"wrap",justifyContent:"center",width:"100%" }}>
-          <button onClick={() => speakHebrew(current)} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
-          <button onClick={startListen}             style={{ ...btn("#C77DFF","#fff"), flex:1 }}>היא סיימה לדבר 🎤</button>
+          <button onClick={prompt}       style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
+          <button onClick={startListen}  style={btn("#C77DFF","#fff")}>🎤 דיברתי</button>
         </div>
       )}
 
@@ -647,9 +696,10 @@ const FeedbackOverlay = ({ type, onDone }) => {
   const msg = msgs[type][Math.floor(Math.random() * msgs[type].length)];
   const ok  = type === "correct";
   useEffect(() => {
-    ok ? playParentVoice("kol_hakavod","כל הכבוד") : playParentVoice("bo_necase","בואי ננסה שוב");
-    const t = setTimeout(onDone, ok ? 1800 : 1500);
-    return () => clearTimeout(t);
+    // setTimeout 0 keeps speech in same JS task as the tap — required on iOS Safari
+    const st = setTimeout(() => speak(ok ? "כל הכבוד" : "כמעט, בואי ננסה שוב"), 0);
+    const ct = setTimeout(onDone, ok ? 2000 : 1600);
+    return () => { clearTimeout(st); clearTimeout(ct); };
   }, []);
   return (
     <div style={{
@@ -673,8 +723,8 @@ const FeedbackOverlay = ({ type, onDone }) => {
 // ============================================================
 const DailyCompleteScreen = ({ onContinue }) => {
   useEffect(() => {
-    playParentVoice("alufah","אלופה");
-    setTimeout(() => speak("סיימנו להיום! כל הכבוד!"), 700);
+    const t = setTimeout(() => speak("אלופה! סיימנו להיום! כל הכבוד!"), 0);
+    return () => clearTimeout(t);
   }, []);
   return (
     <div style={{
@@ -792,13 +842,11 @@ const StartScreen = ({ onStart, dailySuccesses, onSettings }) => (
     </div>
     <div style={{ width:"100%",maxWidth:"380px" }}>
       <DailyMission successCount={dailySuccesses} onStart={onStart} />
-      <div style={{ display:"flex", justifyContent:"center", marginTop:"8px" }}>
-        <button onClick={onStart} style={{
-          ...btn("#FF6B9D","#fff","1.45rem"),
-          width:"100%",padding:"18px",
-          animation:"pulse 2s ease infinite",
-        }}>התחילי 🚀</button>
-      </div>
+      <button onClick={onStart} style={{
+        ...btn("#FF6B9D","#fff","1.45rem"),
+        width:"100%",padding:"18px",
+        animation:"pulse 2s ease infinite",
+      }}>🚀 התחילי!</button>
     </div>
   </div>
 );
@@ -826,9 +874,27 @@ export default function App() {
   });
 
   useEffect(() => {
-    // Warm up voice list (required on iOS before first speak)
-    window.speechSynthesis?.getVoices();
-    window.speechSynthesis?.addEventListener("voiceschanged", () => { _voiceCache = null; });
+    // Pre-load voice list so it's ready when user first taps
+    if (window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+    }
+    // iOS Safari: speak a silent utterance on first user interaction to unlock audio
+    // This runs once on the very first tap anywhere on the page
+    const unlockAudio = () => {
+      if (!window.speechSynthesis) return;
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      u.lang = "he-IL";
+      window.speechSynthesis.speak(u);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("click", unlockAudio);
+    };
+    document.addEventListener("touchstart", unlockAudio, { once: true });
+    document.addEventListener("click",      unlockAudio, { once: true });
+    return () => {
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("click",      unlockAudio);
+    };
   }, []);
 
   const selectCategory = (cat) => {
