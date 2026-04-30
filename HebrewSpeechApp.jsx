@@ -203,8 +203,16 @@ const getHebVoice = () => {
   _voiceCache = vv.find(v => v.lang.startsWith("he")) || vv[0] || null;
   return _voiceCache;
 };
-const speak = (text, onEnd) => {
-  if (!window.speechSynthesis) { onEnd?.(); return; }
+
+// Primary TTS function — must be called from a direct user tap on iPhone Safari.
+const speakHebrew = (text, onEnd) => {
+  console.log("Trying to speak:", text);
+  console.log("speechSynthesis exists:", !!window.speechSynthesis);
+  if (!window.speechSynthesis) {
+    alert("הקול לא נתמך בדפדפן הזה");
+    onEnd?.();
+    return;
+  }
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "he-IL"; u.rate = 0.85; u.pitch = 1.1;
@@ -212,6 +220,9 @@ const speak = (text, onEnd) => {
   u.onend = onEnd;
   window.speechSynthesis.speak(u);
 };
+
+// Keep speak as an alias so existing internal callers still work.
+const speak = speakHebrew;
 
 // ============================================================
 // 🎙️ PARENT VOICE — recorded phrases stored as base64 audio
@@ -461,6 +472,12 @@ const SettingsPanel = ({ settings, onSave, onClose, onVoices }) => {
         <Toggle on={local.speechRecog} onToggle={() => setLocal(p => ({ ...p, speechRecog:!p.speechRecog }))} />
       </div>
 
+      <button
+        onClick={() => speakHebrew("שלום! בואי נדבר בעברית")}
+        style={{ ...btn("#4D96FF","#fff","1rem"),width:"100%",borderRadius:"14px",marginBottom:"10px" }}
+      >
+        🔊 בדיקת קול
+      </button>
       <button onClick={onVoices} style={{ ...btn("#C77DFF","#fff","1rem"),width:"100%",borderRadius:"14px",marginBottom:"10px" }}>
         🎙️ הקלט קול הורה
       </button>
@@ -486,13 +503,13 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
   const prompt = useCallback(() => {
     setWaitingParent(false); setHeardText(null); setSrSuggest(false);
     setMascotState("idle");
-    playParentVoice("tagidi", "תגידי");
-    setTimeout(() => speak(current), 650);
-  }, [current, setMascotState]);
+  }, [setMascotState]);
 
+  // Reset state when a new item loads, but do NOT auto-play — iPhone Safari blocks
+  // audio that wasn't triggered by a direct user tap.
   useEffect(() => {
-    const t = setTimeout(prompt, 500);
-    return () => { clearTimeout(t); window.speechSynthesis?.cancel(); };
+    prompt();
+    return () => { window.speechSynthesis?.cancel(); };
   }, [prompt]);
 
   const startListen = () => {
@@ -575,7 +592,7 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
       {/* Action buttons (pre-decision) */}
       {!waitingParent && (
         <div style={{ display:"flex",gap:"10px",flexWrap:"wrap",justifyContent:"center",width:"100%" }}>
-          <button onClick={() => speak(current)} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
+          <button onClick={() => speakHebrew(current)} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
           <button onClick={startListen}             style={{ ...btn("#C77DFF","#fff"), flex:1 }}>היא סיימה לדבר 🎤</button>
         </div>
       )}
