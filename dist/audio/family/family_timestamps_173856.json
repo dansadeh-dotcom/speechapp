@@ -1,0 +1,200 @@
+{
+  "sourceFile": "WhatsApp Audio 2026-04-30 at 17.38.56.mp4",
+  "recommendedAppPath": "/audio/words.m4a",
+  "method": "silence detection: noise=-32dB, minSilence=0.25s, padding=0.06s",
+  "clipCount": 32,
+  "clips": [
+    {
+      "id": "clip_001",
+      "start": 0,
+      "end": 0.241,
+      "duration": 0.241
+    },
+    {
+      "id": "clip_002",
+      "start": 1.825,
+      "end": 2.279,
+      "duration": 0.453
+    },
+    {
+      "id": "clip_003",
+      "start": 2.907,
+      "end": 3.67,
+      "duration": 0.763
+    },
+    {
+      "id": "clip_004",
+      "start": 4.05,
+      "end": 5.284,
+      "duration": 1.235
+    },
+    {
+      "id": "clip_005",
+      "start": 5.903,
+      "end": 6.311,
+      "duration": 0.408
+    },
+    {
+      "id": "clip_006",
+      "start": 6.79,
+      "end": 7.561,
+      "duration": 0.771
+    },
+    {
+      "id": "clip_007",
+      "start": 8.036,
+      "end": 9.272,
+      "duration": 1.237
+    },
+    {
+      "id": "clip_008",
+      "start": 9.754,
+      "end": 10.39,
+      "duration": 0.636
+    },
+    {
+      "id": "clip_009",
+      "start": 10.753,
+      "end": 13.537,
+      "duration": 2.784
+    },
+    {
+      "id": "clip_010",
+      "start": 13.845,
+      "end": 17.819,
+      "duration": 3.973
+    },
+    {
+      "id": "clip_011",
+      "start": 18.521,
+      "end": 19.218,
+      "duration": 0.697
+    },
+    {
+      "id": "clip_012",
+      "start": 19.501,
+      "end": 20.417,
+      "duration": 0.916
+    },
+    {
+      "id": "clip_013",
+      "start": 20.856,
+      "end": 22.155,
+      "duration": 1.3
+    },
+    {
+      "id": "clip_014",
+      "start": 22.798,
+      "end": 23.297,
+      "duration": 0.5
+    },
+    {
+      "id": "clip_015",
+      "start": 23.793,
+      "end": 26.231,
+      "duration": 2.438
+    },
+    {
+      "id": "clip_016",
+      "start": 26.5,
+      "end": 28.63,
+      "duration": 2.13
+    },
+    {
+      "id": "clip_017",
+      "start": 29.016,
+      "end": 30.575,
+      "duration": 1.558
+    },
+    {
+      "id": "clip_018",
+      "start": 31.315,
+      "end": 31.849,
+      "duration": 0.535
+    },
+    {
+      "id": "clip_019",
+      "start": 32.25,
+      "end": 33.04,
+      "duration": 0.79
+    },
+    {
+      "id": "clip_020",
+      "start": 33.367,
+      "end": 34.794,
+      "duration": 1.427
+    },
+    {
+      "id": "clip_021",
+      "start": 35.532,
+      "end": 36.128,
+      "duration": 0.597
+    },
+    {
+      "id": "clip_022",
+      "start": 36.574,
+      "end": 37.403,
+      "duration": 0.829
+    },
+    {
+      "id": "clip_023",
+      "start": 37.922,
+      "end": 39.224,
+      "duration": 1.303
+    },
+    {
+      "id": "clip_024",
+      "start": 39.809,
+      "end": 40.591,
+      "duration": 0.782
+    },
+    {
+      "id": "clip_025",
+      "start": 40.941,
+      "end": 41.948,
+      "duration": 1.007
+    },
+    {
+      "id": "clip_026",
+      "start": 42.362,
+      "end": 43.814,
+      "duration": 1.452
+    },
+    {
+      "id": "clip_027",
+      "start": 44.331,
+      "end": 45.007,
+      "duration": 0.676
+    },
+    {
+      "id": "clip_028",
+      "start": 45.156,
+      "end": 46.253,
+      "duration": 1.097
+    },
+    {
+      "id": "clip_029",
+      "start": 46.797,
+      "end": 48.06,
+      "duration": 1.263
+    },
+    {
+      "id": "clip_030",
+      "start": 48.684,
+      "end": 49.217,
+      "duration": 0.533
+    },
+    {
+      "id": "clip_031",
+      "start": 49.689,
+      "end": 50.531,
+      "duration": 0.842
+    },
+    {
+      "id": "clip_032",
+      "start": 50.919,
+      "end": 53.152,
+      "duration": 2.233
+    }
+  ]
+}
