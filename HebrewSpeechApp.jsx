@@ -196,17 +196,38 @@ const loadVoices   = () => loadJSON(LS_VOICES, {});
 // 🔊 AUDIO PLAYBACK
 // ============================================================
 
-// --- File-based clip player (animals category only) ---
-const ANIMALS_AUDIO_FILE = "/audio/words.m4a";
-let _sharedAudio = null;
+// Maps each category to an audio slug.
+// To add a recording for a category:
+//   1. Record: for each word in order → word alone, level2 phrase, level3 sentence
+//   2. Run timestamp extraction → save as public/audio/<slug>_timestamps.json
+//   3. Save the recording as public/audio/<slug>.m4a
+const CATEGORY_AUDIO = {
+  "חיות":        "animals",
+  "כלי מטבח":   "kitchen",
+  "צבעים":       "colors",
+  "מספרים":      "numbers",
+  "כלי תחבורה": "transport",
+  "אוכל":        "food",
+  "פירות":       "fruits",
+  "ירקות":       "vegetables",
+  "משפחה":       "family",
+  "פעולות":      "actions",
+};
+
+let _audioElements = {}; // slug → Audio element
 let _fileClipTimer = null;
 
-function primeAudio() {
-  if (!_sharedAudio) {
-    _sharedAudio = new Audio(ANIMALS_AUDIO_FILE);
-    _sharedAudio.preload = "auto";
+function getAudioElement(slug) {
+  if (!_audioElements[slug]) {
+    _audioElements[slug] = new Audio(`/audio/${slug}.m4a`);
+    _audioElements[slug].preload = "auto";
   }
-  const a = _sharedAudio;
+  return _audioElements[slug];
+}
+
+function primeAudio(slug) {
+  if (!slug) return;
+  const a = getAudioElement(slug);
   a.muted = true;
   const p = a.play();
   if (p) p.then(() => { a.pause(); a.muted = false; }).catch(() => {});
@@ -215,16 +236,12 @@ function primeAudio() {
 
 function stopFileClip() {
   if (_fileClipTimer) { clearInterval(_fileClipTimer); _fileClipTimer = null; }
-  if (_sharedAudio && !_sharedAudio.paused) _sharedAudio.pause();
+  Object.values(_audioElements).forEach(a => { if (!a.paused) a.pause(); });
 }
 
-function playFileClip(start, end) {
+function playFileClip(start, end, slug) {
   stopFileClip();
-  if (!_sharedAudio) {
-    _sharedAudio = new Audio(ANIMALS_AUDIO_FILE);
-    _sharedAudio.preload = "auto";
-  }
-  const audio = _sharedAudio;
+  const audio = getAudioElement(slug);
   audio.muted = false;
   audio.volume = 1;
   audio.currentTime = start;
@@ -238,7 +255,7 @@ function playFileClip(start, end) {
   }, 50);
 }
 
-// --- Speech synthesis (default for all other categories) ---
+// --- Speech synthesis (fallback when no recording exists) ---
 function stopAudioClip() {
   window.speechSynthesis && window.speechSynthesis.cancel();
   stopFileClip();
@@ -278,10 +295,10 @@ const playParentVoice = (key, fallback) => {
   if (fallback) playAudioClip(fallback);
 };
 
-// --- Timestamp helpers (animals only) ---
-const normalizeAnimalTimestamps = (raw) => {
+// --- Timestamp helpers (generic, works for any category) ---
+const normalizeCategoryTimestamps = (raw, words) => {
   const normalized = {};
-  WORD_DATA["חיות"].forEach((word, i) => {
+  words.forEach((word, i) => {
     const b = i * 3;
     normalized[word.id] = {
       word:   raw[b]   ? { start: raw[b].start,   end: raw[b].end   } : null,
@@ -292,11 +309,12 @@ const normalizeAnimalTimestamps = (raw) => {
   return normalized;
 };
 
-const attachAnimalAudioRanges = (words, timestamps) => words.map(word => {
+const attachCategoryAudioRanges = (words, timestamps, slug) => words.map(word => {
   const e = timestamps[word.id];
   if (!e) return word;
   return {
     ...word,
+    _audioSlug:       slug,
     audioStart:       e.word?.start   ?? null,
     audioEnd:         e.word?.end     ?? null,
     level2AudioStart: e.level2?.start ?? null,
@@ -570,12 +588,12 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
   }, [item.id, level]);
 
   const playCurrentPhrase = useCallback(() => {
-    if (typeof item.audioStart === "number" && typeof item.audioEnd === "number") {
-      playFileClip(item.audioStart, item.audioEnd);
+    if (typeof item.audioStart === "number" && typeof item.audioEnd === "number" && item._audioSlug) {
+      playFileClip(item.audioStart, item.audioEnd, item._audioSlug);
     } else {
       playAudioClip(current);
     }
-  }, [item.audioStart, item.audioEnd, current]);
+  }, [item.audioStart, item.audioEnd, item._audioSlug, current]);
 
   const prompt = useCallback(() => {
     setWaitingParent(false);
@@ -961,30 +979,47 @@ export default function App() {
   const [dailySuccesses,  setDailySuccesses] = useState(() => {
     const d = loadDaily(); return d[todayKey()] || 0;
   });
+  // audioTimestamps: { [categoryName]: { [wordId]: { word, level2, level3 } } }
   const [audioTimestamps, setAudioTimestamps] = useState({});
-
-  useEffect(() => {
-    fetch("/audio/audio_timestamps.json")
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => setAudioTimestamps(normalizeAnimalTimestamps(data)))
-      .catch(() => {});
-  }, []);
-
-  // Re-attach timestamps if animals session is already open when they finish loading
-  useEffect(() => {
-    if (category === "חיות" && items.length > 0 && Object.keys(audioTimestamps).length > 0) {
-      setItems(prev => attachAnimalAudioRanges(prev, audioTimestamps));
-    }
-  }, [audioTimestamps]);
 
   const selectCategory = (cat) => {
     setCategory(cat);
-    const words = cat === "חיות"
-      ? attachAnimalAudioRanges(WORD_DATA[cat], audioTimestamps)
-      : WORD_DATA[cat];
-    setItems(buildSession(words));
-    setItemIndex(0); setLevel(1); setMiniStars(0); setSessProgress(0);
-    setScreen("practice");
+    const slug = CATEGORY_AUDIO[cat];
+    const buildWithAudio = (timestamps) => {
+      const words = slug && timestamps[cat]
+        ? attachCategoryAudioRanges(WORD_DATA[cat], timestamps[cat], slug)
+        : WORD_DATA[cat];
+      setItems(buildSession(words));
+    };
+
+    // If we already have timestamps for this category, use them immediately
+    if (slug && audioTimestamps[cat]) {
+      buildWithAudio(audioTimestamps);
+      primeAudio(slug);
+      setItemIndex(0); setLevel(1); setMiniStars(0); setSessProgress(0);
+      setScreen("practice");
+      return;
+    }
+
+    // Otherwise fetch them (or fall back to speechSynthesis if file missing)
+    const fetchAndBuild = slug
+      ? fetch(`/audio/${slug}_timestamps.json`)
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(data => {
+            const normalized = normalizeCategoryTimestamps(data, WORD_DATA[cat]);
+            const updated = { ...audioTimestamps, [cat]: normalized };
+            setAudioTimestamps(updated);
+            primeAudio(slug);
+            return updated;
+          })
+          .catch(() => audioTimestamps)
+      : Promise.resolve(audioTimestamps);
+
+    fetchAndBuild.then(timestamps => {
+      buildWithAudio(timestamps);
+      setItemIndex(0); setLevel(1); setMiniStars(0); setSessProgress(0);
+      setScreen("practice");
+    });
   };
 
   const handleCorrect = () => setFeedback("correct");
@@ -1013,8 +1048,9 @@ export default function App() {
       else {
         setLevel(1);
         if (itemIndex + 1 >= items.length) {
-          const words = category === "חיות"
-            ? attachAnimalAudioRanges(WORD_DATA[category], audioTimestamps)
+          const slug = CATEGORY_AUDIO[category];
+          const words = slug && audioTimestamps[category]
+            ? attachCategoryAudioRanges(WORD_DATA[category], audioTimestamps[category], slug)
             : WORD_DATA[category];
           setItems(buildSession(words)); setItemIndex(0);
         } else {
@@ -1050,7 +1086,7 @@ export default function App() {
     }}>
       {/* ── SCREENS ── */}
       {screen === "start" && (
-        <StartScreen onStart={() => { primeAudio(); setScreen("category"); }} dailySuccesses={dailySuccesses} onSettings={() => setShowSettings(true)} />
+        <StartScreen onStart={() => setScreen("category")} dailySuccesses={dailySuccesses} onSettings={() => setShowSettings(true)} />
       )}
 
       {screen === "category" && (
