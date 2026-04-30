@@ -196,9 +196,7 @@ const loadVoices   = () => loadJSON(LS_VOICES, {});
 // 🔊 TIMESTAMPED AUDIO PLAYBACK
 // ============================================================
 const AUDIO_FILE = "/audio/words.m4a";
-const activeClipAudio = new Audio(AUDIO_FILE);
-activeClipAudio.preload = "auto";
-activeClipAudio.load();
+let activeClipAudio = null;
 let activeClipTimer = null;
 
 function stopAudioClip() {
@@ -206,7 +204,10 @@ function stopAudioClip() {
     clearInterval(activeClipTimer);
     activeClipTimer = null;
   }
-  activeClipAudio.pause();
+  if (activeClipAudio) {
+    activeClipAudio.pause();
+    activeClipAudio = null;
+  }
 }
 
 function playAudioClip(start, end) {
@@ -216,16 +217,22 @@ function playAudioClip(start, end) {
   }
 
   stopAudioClip();
-  activeClipAudio.volume = 1;
-  activeClipAudio.currentTime = start;
-  activeClipAudio.play().catch((error) => {
+  console.log("playAudioClip", { start, end });
+
+  const audio = new Audio(AUDIO_FILE);
+  activeClipAudio = audio;
+  audio.volume = 1;
+
+  // Direct tap-driven playback + timed stop for the selected clip.
+  audio.currentTime = start;
+  audio.play().catch((error) => {
     console.error("Audio failed:", error);
     alert("האודיו לא נטען. בדוק שהקובץ נמצא ב-public/audio/words.m4a");
   });
 
   activeClipTimer = setInterval(() => {
-    if (activeClipAudio.currentTime >= end || activeClipAudio.paused || activeClipAudio.ended) {
-      activeClipAudio.pause();
+    if (audio.currentTime >= end || audio.paused || audio.ended) {
+      audio.pause();
       clearInterval(activeClipTimer);
       activeClipTimer = null;
     }
@@ -935,7 +942,11 @@ export default function App() {
         if (!res.ok) throw new Error("Missing audio_timestamps.json");
         return res.json();
       })
-      .then((data) => setAudioTimestamps(normalizeAudioTimestamps(data)))
+      .then((data) => {
+        const normalized = normalizeAudioTimestamps(data);
+        console.log("timestamps loaded", Object.keys(normalized).length);
+        setAudioTimestamps(normalized);
+      })
       .catch((error) => console.warn("Audio timestamps not loaded:", error));
   }, []);
 
