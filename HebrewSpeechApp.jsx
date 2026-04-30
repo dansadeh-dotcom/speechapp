@@ -193,62 +193,17 @@ const loadDaily    = () => loadJSON(LS_DAILY, {});
 const loadVoices   = () => loadJSON(LS_VOICES, {});
 
 // ============================================================
-// 🔊 SPEECH SYNTHESIS (TTS)
-// iOS Safari rules:
-//   1. speechSynthesis.speak() MUST be called synchronously inside
-//      a user-gesture handler (tap/click). It cannot be called from
-//      useEffect, setTimeout, or Promise callbacks.
-//   2. Voices are available immediately on iOS — no need to wait.
-//   3. Cancel before speaking to avoid queue buildup.
-//   4. Do NOT double-call: the voiceschanged + setTimeout pattern
-//      causes two utterances. We just call directly.
+// 🔊 TEMPORARY AUDIO PLAYBACK
 // ============================================================
-const speak = (text, onEnd) => {
-  if (!window.speechSynthesis) { onEnd?.(); return; }
-
-  // Cancel any ongoing speech first
-  window.speechSynthesis.cancel();
-
-  const pickVoice = (voices) => {
-    console.log("Available voices:", voices.map(v => `${v.name} (${v.lang})`));
-
-    const heVoices = voices.filter(v => v.lang.startsWith("he"));
-    console.log("Hebrew voices found:", heVoices.map(v => `${v.name} (${v.lang})`));
-
-    // Prefer Hebrew female voices by common name patterns
-    const femalePatterns = /female|woman|girl|miriam|carmit|tami|yael|sara/i;
-    const heFemale = heVoices.find(v => femalePatterns.test(v.name));
-    if (heFemale) { console.log("Selected Hebrew female voice:", heFemale.name); return heFemale; }
-
-    // Any Hebrew voice
-    if (heVoices.length > 0) { console.log("Selected Hebrew voice:", heVoices[0].name); return heVoices[0]; }
-
-    // Fallback: default voice
-    console.log("No Hebrew voice found — using default voice");
-    return null;
-  };
-
-  const fire = () => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang   = "he-IL";
-    u.rate   = 0.82;
-    u.pitch  = 1.05;
-    u.volume = 1;
-    u.voice  = pickVoice(window.speechSynthesis.getVoices());
-    if (onEnd) u.onend = onEnd;
-    window.speechSynthesis.speak(u);
-  };
-
-  // On iOS voices are ready immediately after first page interaction.
-  // On Chrome desktop they may load async — handle both without double-firing.
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length > 0) {
-    fire();
-  } else {
-    // Only listen once — no setTimeout fallback to avoid double-speak
-    window.speechSynthesis.addEventListener("voiceschanged", fire, { once: true });
-  }
-};
+function playTestAudio() {
+  console.log("Playing test audio: /audio/words.m4a");
+  const audio = new Audio("/audio/words.m4a");
+  audio.volume = 1;
+  audio.play().catch((error) => {
+    console.error("Audio failed:", error);
+    alert("האודיו לא נטען. בדוק שהקובץ נמצא ב-public/audio/words.m4a");
+  });
+}
 
 // ============================================================
 // 🎙️ PARENT VOICE — recorded phrases stored as base64 audio
@@ -265,7 +220,7 @@ const PARENT_PHRASES = [
 const playParentVoice = (key, fallback) => {
   const v = loadVoices();
   if (v[key]) { try { new Audio(v[key]).play(); return; } catch {} }
-  speak(fallback);
+  playTestAudio();
 };
 
 // ============================================================
@@ -439,7 +394,7 @@ const ParentVoicePanel = ({ onClose }) => {
   const playRec = (key, label) => {
     const v = loadVoices();
     if (v[key]) { try { new Audio(v[key]).play(); return; } catch {} }
-    speak(label);
+    playTestAudio();
   };
 
   return (
@@ -528,17 +483,15 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
     setSrSuggest(false);
     setHasPlayed(false);
     setMascotState("idle");
-    return () => { window.speechSynthesis?.cancel(); };
   }, [item.id, level]);
 
-  // prompt() is always called from a tap — safe on iOS
   const prompt = useCallback(() => {
     setWaitingParent(false);
     setHeardText(null);
     setSrSuggest(false);
     setHasPlayed(true);
     setMascotState("idle");
-    speak(`תגידי: ${current}`);
+    playTestAudio();
   }, [current, setMascotState]);
 
   const startListen = () => {
@@ -648,13 +601,19 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
       {/* Action buttons (after first play) */}
       {hasPlayed && !waitingParent && (
         <div style={{ display:"flex",gap:"10px",flexWrap:"wrap",justifyContent:"center",width:"100%" }}>
-          <button onClick={() => {
-            console.log("playing audio");
-            const audio = new Audio("/audio/words.m4a");
-            audio.play().catch(e => console.log("audio error", e));
-          }} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
+          <button onClick={playTestAudio} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
           <button onClick={startListen}  style={btn("#C77DFF","#fff")}>🎤 דיברתי</button>
         </div>
+      )}
+
+      {!waitingParent && (
+        <button onClick={playTestAudio} style={{
+          ...btn("#FF6B9D","#fff","1.2rem"),
+          width:"100%",
+          maxWidth:"360px",
+          padding:"18px 20px",
+          animation:"pulse 1.8s ease infinite",
+        }}>בדיקת שמע</button>
       )}
 
       {/* ★ PARENT DECISION ZONE — clearly highlighted */}
@@ -707,10 +666,8 @@ const FeedbackOverlay = ({ type, onDone }) => {
   const msg = msgs[type][Math.floor(Math.random() * msgs[type].length)];
   const ok  = type === "correct";
   useEffect(() => {
-    // setTimeout 0 keeps speech in same JS task as the tap — required on iOS Safari
-    const st = setTimeout(() => speak(ok ? "כל הכבוד" : "כמעט, בואי ננסה שוב"), 0);
     const ct = setTimeout(onDone, ok ? 2000 : 1600);
-    return () => { clearTimeout(st); clearTimeout(ct); };
+    return () => { clearTimeout(ct); };
   }, []);
   return (
     <div style={{
@@ -733,10 +690,6 @@ const FeedbackOverlay = ({ type, onDone }) => {
 // 🏆 DAILY MISSION COMPLETE SCREEN
 // ============================================================
 const DailyCompleteScreen = ({ onContinue }) => {
-  useEffect(() => {
-    const t = setTimeout(() => speak("אלופה! סיימנו להיום! כל הכבוד!"), 0);
-    return () => clearTimeout(t);
-  }, []);
   return (
     <div style={{
       position:"fixed",inset:0,zIndex:600,
@@ -886,30 +839,6 @@ export default function App() {
     const d = loadDaily(); return d[todayKey()] || 0;
   });
 
-  useEffect(() => {
-    // Pre-load voice list so it's ready when user first taps
-    if (window.speechSynthesis) {
-      window.speechSynthesis.getVoices();
-    }
-    // iOS Safari: speak a silent utterance on first user interaction to unlock audio
-    // This runs once on the very first tap anywhere on the page
-    const unlockAudio = () => {
-      if (!window.speechSynthesis) return;
-      const u = new SpeechSynthesisUtterance(" ");
-      u.volume = 0;
-      u.lang = "he-IL";
-      window.speechSynthesis.speak(u);
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("click", unlockAudio);
-    };
-    document.addEventListener("touchstart", unlockAudio, { once: true });
-    document.addEventListener("click",      unlockAudio, { once: true });
-    return () => {
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("click",      unlockAudio);
-    };
-  }, []);
-
   const selectCategory = (cat) => {
     setCategory(cat);
     setItems(buildSession(WORD_DATA[cat]));
@@ -920,8 +849,7 @@ export default function App() {
   const handleCorrect = () => setFeedback("correct");
   const handleAlmost  = () => setFeedback("almost");
   const handleRetry   = () => {
-    const cur = level===1 ? items[itemIndex].word : level===2 ? items[itemIndex].level2 : items[itemIndex].level3;
-    speak(`תגידי: ${cur}`);
+    playTestAudio();
   };
 
   const handleFeedbackDone = () => {
