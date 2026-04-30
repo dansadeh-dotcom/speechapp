@@ -197,8 +197,9 @@ const loadVoices   = () => loadJSON(LS_VOICES, {});
 // ============================================================
 const AUDIO_FILE = "/audio/words.m4a";
 
-// Single shared audio element — reused across clips so iOS stays "unlocked"
-// after the first user-gesture play().
+// Single shared audio element. iOS Safari requires audio.play() to be called
+// synchronously inside a user-gesture handler before any seeking works.
+// primeAudio() must be called from the first button tap to unlock it.
 let _sharedAudio = null;
 let activeClipTimer = null;
 
@@ -208,6 +209,15 @@ function getSharedAudio() {
     _sharedAudio.preload = "auto";
   }
   return _sharedAudio;
+}
+
+// Call once from a direct user-gesture (e.g. the start button) to unlock iOS audio.
+function primeAudio() {
+  const a = getSharedAudio();
+  a.muted = true;
+  const p = a.play();
+  if (p) p.then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => {});
+  else { a.pause(); a.currentTime = 0; a.muted = false; }
 }
 
 function stopAudioClip() {
@@ -221,50 +231,22 @@ function stopAudioClip() {
 
 function playAudioClip(start, end) {
   if (typeof start !== "number" || typeof end !== "number") {
-    // No timestamp for this word — skip silently (other categories not yet recorded)
+    // No timestamp for this word — skip silently
     return;
   }
-
   stopAudioClip();
-  console.log("playAudioClip", { start, end });
-
   const audio = getSharedAudio();
-
-  const startClip = () => {
-    audio.currentTime = start;
-    audio.muted = false;
-    audio.volume = 1;
-    audio.play().catch((err) => console.error("Audio play failed:", err));
-    activeClipTimer = setInterval(() => {
-      if (audio.currentTime >= end || audio.paused || audio.ended) {
-        audio.pause();
-        clearInterval(activeClipTimer);
-        activeClipTimer = null;
-      }
-    }, 50);
-  };
-
-  if (audio.readyState >= 2) {
-    // Audio is already loaded — seek directly (iOS allows this after first unlock)
-    startClip();
-  } else {
-    // First load: play muted to satisfy iOS gesture requirement,
-    // then seek to the real start once canplay fires.
-    audio.muted = true;
-    const p = audio.play();
-    if (p) {
-      p.then(() => {
-        startClip();
-      }).catch(() => {
-        // Fallback: try direct seek anyway
-        audio.muted = false;
-        startClip();
-      });
-    } else {
-      audio.muted = false;
-      startClip();
+  audio.muted = false;
+  audio.volume = 1;
+  audio.currentTime = start;
+  audio.play().catch((err) => console.error("Audio play failed:", err));
+  activeClipTimer = setInterval(() => {
+    if (audio.currentTime >= end) {
+      audio.pause();
+      clearInterval(activeClipTimer);
+      activeClipTimer = null;
     }
-  }
+  }, 50);
 }
 
 const getTimestampRange = (entry, level) => {
@@ -1050,7 +1032,7 @@ export default function App() {
     }}>
       {/* ── SCREENS ── */}
       {screen === "start" && (
-        <StartScreen onStart={() => setScreen("category")} dailySuccesses={dailySuccesses} onSettings={() => setShowSettings(true)} />
+        <StartScreen onStart={() => { primeAudio(); setScreen("category"); }} dailySuccesses={dailySuccesses} onSettings={() => setShowSettings(true)} />
       )}
 
       {screen === "category" && (

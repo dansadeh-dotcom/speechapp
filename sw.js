@@ -3,7 +3,7 @@
 // Caches the app shell for offline use.
 // ============================================================
 
-const CACHE = "mdb-v4";
+const CACHE = "mdb-v5";
 const ASSETS = [
   "/",
   "/index.html",
