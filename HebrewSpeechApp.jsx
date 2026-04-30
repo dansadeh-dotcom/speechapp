@@ -1010,7 +1010,7 @@ export default function App() {
 
     // Otherwise fetch them (or fall back to speechSynthesis if file missing)
     const fetchAndBuild = slug
-      ? fetch(`${prefix}_timestamps.json`)
+      ? fetch(`${slug}_timestamps.json`)
           .then(r => r.ok ? r.json() : Promise.reject())
           .then(data => {
             const normalized = normalizeCategoryTimestamps(data, WORD_DATA[cat]);
