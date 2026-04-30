@@ -363,11 +363,6 @@ const DailyMission = ({ successCount, onStart }) => {
           {done ? "כל הכבוד — תרגלת 5 מילים היום!" : `תרגלי ${DAILY_GOAL} מילים בהצלחה`}
         </div>
         <ProgressStars count={Math.min(successCount, DAILY_GOAL)} total={DAILY_GOAL} size="1.25rem" />
-        {!done && (
-          <button onClick={onStart} style={{ ...btn("#FF6B9D","#fff","1rem"), marginTop:"4px" }}>
-            🚀 התחילי עכשיו
-          </button>
-        )}
       </div>
     </div>
   );
@@ -788,11 +783,13 @@ const StartScreen = ({ onStart, dailySuccesses, onSettings }) => (
     </div>
     <div style={{ width:"100%",maxWidth:"380px" }}>
       <DailyMission successCount={dailySuccesses} onStart={onStart} />
-      <button onClick={onStart} style={{
-        ...btn("#FF6B9D","#fff","1.45rem"),
-        width:"100%",padding:"18px",
-        animation:"pulse 2s ease infinite",
-      }}>🚀 התחילי!</button>
+      <div style={{ display:"flex", justifyContent:"center", marginTop:"8px" }}>
+        <button onClick={onStart} style={{
+          ...btn("#FF6B9D","#fff","1.45rem"),
+          width:"100%",padding:"18px",
+          animation:"pulse 2s ease infinite",
+        }}>התחילי 🚀</button>
+      </div>
     </div>
   </div>
 );
