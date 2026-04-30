@@ -648,7 +648,11 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
       {/* Action buttons (after first play) */}
       {hasPlayed && !waitingParent && (
         <div style={{ display:"flex",gap:"10px",flexWrap:"wrap",justifyContent:"center",width:"100%" }}>
-          <button onClick={prompt}       style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
+          <button onClick={() => {
+            console.log("playing audio");
+            const audio = new Audio("/audio/words.m4a");
+            audio.play().catch(e => console.log("audio error", e));
+          }} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
           <button onClick={startListen}  style={btn("#C77DFF","#fff")}>🎤 דיברתי</button>
         </div>
       )}
