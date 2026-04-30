@@ -209,20 +209,32 @@ const speak = (text, onEnd) => {
   // Cancel any ongoing speech first
   window.speechSynthesis.cancel();
 
+  const pickVoice = (voices) => {
+    console.log("Available voices:", voices.map(v => `${v.name} (${v.lang})`));
+
+    const heVoices = voices.filter(v => v.lang.startsWith("he"));
+    console.log("Hebrew voices found:", heVoices.map(v => `${v.name} (${v.lang})`));
+
+    // Prefer Hebrew female voices by common name patterns
+    const femalePatterns = /female|woman|girl|miriam|carmit|tami|yael|sara/i;
+    const heFemale = heVoices.find(v => femalePatterns.test(v.name));
+    if (heFemale) { console.log("Selected Hebrew female voice:", heFemale.name); return heFemale; }
+
+    // Any Hebrew voice
+    if (heVoices.length > 0) { console.log("Selected Hebrew voice:", heVoices[0].name); return heVoices[0]; }
+
+    // Fallback: default voice
+    console.log("No Hebrew voice found — using default voice");
+    return null;
+  };
+
   const fire = () => {
     const u = new SpeechSynthesisUtterance(text);
-    u.lang    = "he-IL";
-    u.rate    = 0.82;
-    u.pitch   = 1.05;
-    u.volume  = 1;
-
-    const voices = window.speechSynthesis.getVoices();
-    // Prefer Hebrew, fall back to Arabic (phonetically similar), then any voice
-    u.voice = voices.find(v => v.lang.startsWith("he"))
-           || voices.find(v => v.lang.startsWith("ar"))
-           || voices[0]
-           || null;
-
+    u.lang   = "he-IL";
+    u.rate   = 0.82;
+    u.pitch  = 1.05;
+    u.volume = 1;
+    u.voice  = pickVoice(window.speechSynthesis.getVoices());
     if (onEnd) u.onend = onEnd;
     window.speechSynthesis.speak(u);
   };
