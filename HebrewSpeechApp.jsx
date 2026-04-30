@@ -496,20 +496,8 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
   }, [prompt]);
 
   const startListen = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR || !settings.speechRecog) { setMascotState("listening"); setWaitingParent(true); return; }
-    const rec = new SR();
-    rec.lang = "he-IL"; rec.interimResults = false;
-    rec.onstart = () => setMascotState("listening");
-    rec.onend   = () => setWaitingParent(true);
-    rec.onresult = (e) => {
-      const said = e.results[0][0].transcript.trim();
-      setHeardText(said);
-      const target = current.replace(/[.,!?]/g,"");
-      if (said.includes(item.word) || target.includes(said.replace(/[.,!?]/g,""))) setSrSuggest(true);
-    };
-    rec.onerror = () => setWaitingParent(true);
-    rec.start(); recRef.current = rec;
+    setMascotState("listening");
+    setWaitingParent(true);
   };
 
   const doCorrect = () => { setWaitingParent(false); setMascotState("excited"); onCorrect(); };
@@ -551,14 +539,18 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
         }}>❤️</button>
 
         {/* TO ADD REAL IMAGES: replace span with <img src={item.imageSrc} style={{width:160,height:160,objectFit:"contain"}} /> */}
+        <div style={{
+          fontSize:"1.05rem",fontWeight:700,color:"#aaa",
+          fontFamily:"'Varela Round',sans-serif",letterSpacing:"0.02em",
+        }}>תגידי:</div>
+        <div style={{
+          fontSize:"2.6rem",fontWeight:900,fontFamily:"'Varela Round',sans-serif",
+          textAlign:"center",color:"#FF6B9D",marginBottom:"4px",
+        }}>{current}</div>
         <span style={{ fontSize:"5.5rem",lineHeight:1,filter:"drop-shadow(0 4px 8px rgba(0,0,0,0.1))" }}>
           {item.emoji}
         </span>
-        <div style={{
-          fontSize:"2rem",fontWeight:900,fontFamily:"'Varela Round',sans-serif",textAlign:"center",
-          background:"linear-gradient(90deg,#FF6B9D,#FF6B35)",
-          WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
-        }}>{current}</div>
+
         <div style={{
           fontSize:"0.9rem",color:"#bbb",
           background:"#f0f0f0",borderRadius:"20px",padding:"3px 13px",
@@ -583,8 +575,8 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
       {/* Action buttons (pre-decision) */}
       {!waitingParent && (
         <div style={{ display:"flex",gap:"10px",flexWrap:"wrap",justifyContent:"center",width:"100%" }}>
-          <button onClick={prompt}       style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
-          <button onClick={startListen}  style={btn("#C77DFF","#fff")}>🎤 דיברתי</button>
+          <button onClick={() => speak(current)} style={btn("#4D96FF","#fff")}>🔊 שמעי שוב</button>
+          <button onClick={startListen}             style={{ ...btn("#C77DFF","#fff"), flex:1 }}>היא סיימה לדבר 🎤</button>
         </div>
       )}
 
