@@ -3,11 +3,11 @@
 // Caches the app shell for offline use.
 // ============================================================
 
-const CACHE = "mdb-v5";
+const CACHE = "mdb-v6";
 const ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.json",
+  "/speechapp/",
+  "/speechapp/index.html",
+  "/speechapp/manifest.json",
   // Vite builds hashed JS/CSS — they are cached via fetch intercept below
 ];
 
