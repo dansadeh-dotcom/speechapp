@@ -193,24 +193,65 @@ const loadDaily    = () => loadJSON(LS_DAILY, {});
 const loadVoices   = () => loadJSON(LS_VOICES, {});
 
 // ============================================================
-// 🔊 SPEECH SYNTHESIS PLAYBACK
+// 🔊 AUDIO PLAYBACK
 // ============================================================
-function stopAudioClip() {
-  window.speechSynthesis && window.speechSynthesis.cancel();
-}
+
+// --- File-based clip player (animals category only) ---
+const ANIMALS_AUDIO_FILE = "/audio/words.m4a";
+let _sharedAudio = null;
+let _fileClipTimer = null;
 
 function primeAudio() {
-  // no-op for speechSynthesis (no unlock needed)
+  if (!_sharedAudio) {
+    _sharedAudio = new Audio(ANIMALS_AUDIO_FILE);
+    _sharedAudio.preload = "auto";
+  }
+  const a = _sharedAudio;
+  a.muted = true;
+  const p = a.play();
+  if (p) p.then(() => { a.pause(); a.muted = false; }).catch(() => {});
+  else { a.pause(); a.muted = false; }
+}
+
+function stopFileClip() {
+  if (_fileClipTimer) { clearInterval(_fileClipTimer); _fileClipTimer = null; }
+  if (_sharedAudio && !_sharedAudio.paused) _sharedAudio.pause();
+}
+
+function playFileClip(start, end) {
+  stopFileClip();
+  if (!_sharedAudio) {
+    _sharedAudio = new Audio(ANIMALS_AUDIO_FILE);
+    _sharedAudio.preload = "auto";
+  }
+  const audio = _sharedAudio;
+  audio.muted = false;
+  audio.volume = 1;
+  audio.currentTime = start;
+  audio.play().catch(err => console.error("File clip failed:", err));
+  _fileClipTimer = setInterval(() => {
+    if (audio.currentTime >= end) {
+      audio.pause();
+      clearInterval(_fileClipTimer);
+      _fileClipTimer = null;
+    }
+  }, 50);
+}
+
+// --- Speech synthesis (default for all other categories) ---
+function stopAudioClip() {
+  window.speechSynthesis && window.speechSynthesis.cancel();
+  stopFileClip();
 }
 
 function playAudioClip(text) {
   if (!text || !window.speechSynthesis) return;
+  stopFileClip();
   window.speechSynthesis.cancel();
   const utt = new SpeechSynthesisUtterance(text);
   utt.lang = "he-IL";
   utt.rate = 0.85;
   utt.pitch = 1.1;
-  // prefer an Israeli Hebrew voice if available
   const voices = window.speechSynthesis.getVoices();
   const heVoice = voices.find(v => v.lang === "he-IL") || voices.find(v => v.lang.startsWith("he"));
   if (heVoice) utt.voice = heVoice;
@@ -236,6 +277,34 @@ const playParentVoice = (key, fallback) => {
   if (v[key]) { try { new Audio(v[key]).play(); return; } catch {} }
   if (fallback) playAudioClip(fallback);
 };
+
+// --- Timestamp helpers (animals only) ---
+const normalizeAnimalTimestamps = (raw) => {
+  const normalized = {};
+  WORD_DATA["חיות"].forEach((word, i) => {
+    const b = i * 3;
+    normalized[word.id] = {
+      word:   raw[b]   ? { start: raw[b].start,   end: raw[b].end   } : null,
+      level2: raw[b+1] ? { start: raw[b+1].start, end: raw[b+1].end } : null,
+      level3: raw[b+2] ? { start: raw[b+2].start, end: raw[b+2].end } : null,
+    };
+  });
+  return normalized;
+};
+
+const attachAnimalAudioRanges = (words, timestamps) => words.map(word => {
+  const e = timestamps[word.id];
+  if (!e) return word;
+  return {
+    ...word,
+    audioStart:       e.word?.start   ?? null,
+    audioEnd:         e.word?.end     ?? null,
+    level2AudioStart: e.level2?.start ?? null,
+    level2AudioEnd:   e.level2?.end   ?? null,
+    level3AudioStart: e.level3?.start ?? null,
+    level3AudioEnd:   e.level3?.end   ?? null,
+  };
+});
 
 // ============================================================
 // 🧠 SMART SESSION BUILDER — weighted random selection
@@ -501,8 +570,12 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
   }, [item.id, level]);
 
   const playCurrentPhrase = useCallback(() => {
-    playAudioClip(current);
-  }, [current]);
+    if (typeof item.audioStart === "number" && typeof item.audioEnd === "number") {
+      playFileClip(item.audioStart, item.audioEnd);
+    } else {
+      playAudioClip(current);
+    }
+  }, [item.audioStart, item.audioEnd, current]);
 
   const prompt = useCallback(() => {
     setWaitingParent(false);
@@ -888,10 +961,28 @@ export default function App() {
   const [dailySuccesses,  setDailySuccesses] = useState(() => {
     const d = loadDaily(); return d[todayKey()] || 0;
   });
+  const [audioTimestamps, setAudioTimestamps] = useState({});
+
+  useEffect(() => {
+    fetch("/audio/audio_timestamps.json")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setAudioTimestamps(normalizeAnimalTimestamps(data)))
+      .catch(() => {});
+  }, []);
+
+  // Re-attach timestamps if animals session is already open when they finish loading
+  useEffect(() => {
+    if (category === "חיות" && items.length > 0 && Object.keys(audioTimestamps).length > 0) {
+      setItems(prev => attachAnimalAudioRanges(prev, audioTimestamps));
+    }
+  }, [audioTimestamps]);
 
   const selectCategory = (cat) => {
     setCategory(cat);
-    setItems(buildSession(WORD_DATA[cat]));
+    const words = cat === "חיות"
+      ? attachAnimalAudioRanges(WORD_DATA[cat], audioTimestamps)
+      : WORD_DATA[cat];
+    setItems(buildSession(words));
     setItemIndex(0); setLevel(1); setMiniStars(0); setSessProgress(0);
     setScreen("practice");
   };
@@ -922,7 +1013,10 @@ export default function App() {
       else {
         setLevel(1);
         if (itemIndex + 1 >= items.length) {
-          setItems(buildSession(WORD_DATA[category])); setItemIndex(0);
+          const words = category === "חיות"
+            ? attachAnimalAudioRanges(WORD_DATA[category], audioTimestamps)
+            : WORD_DATA[category];
+          setItems(buildSession(words)); setItemIndex(0);
         } else {
           setItemIndex(i => i + 1);
         }
