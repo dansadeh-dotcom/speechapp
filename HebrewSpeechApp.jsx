@@ -668,24 +668,44 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
 // 🌈 FEEDBACK OVERLAY (correct / almost)
 // ============================================================
 function playCheer() {
-  // Short ascending beep using Web Audio API
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const freqs = [523, 659, 784, 1047];
-    freqs.forEach((freq, i) => {
+
+    // Clap: burst of filtered white noise
+    const clap = (t) => {
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.12, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass"; filter.frequency.value = 1200; filter.Q.value = 0.8;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.9, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      src.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+      src.start(t); src.stop(t + 0.12);
+    };
+
+    // 5 claps: quick double-clap, pause, triple-clap
+    [0, 0.18, 0.55, 0.73, 0.91].forEach(offset => clap(ctx.currentTime + offset));
+
+    // Celebratory fanfare after the claps
+    const fanfare = [
+      [784, 0, 0.15], [988, 0.15, 0.15], [1175, 0.3, 0.15],
+      [1568, 0.45, 0.35], [1319, 0.82, 0.15], [1568, 0.97, 0.4],
+    ];
+    fanfare.forEach(([freq, offset, dur]) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      const t = ctx.currentTime + i * 0.12;
-      gain.gain.setValueAtTime(0.35, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-      osc.start(t); osc.stop(t + 0.25);
+      osc.type = "triangle"; osc.frequency.value = freq;
+      const t = ctx.currentTime + offset + 1.05;
+      gain.gain.setValueAtTime(0.28, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t); osc.stop(t + dur);
     });
   } catch {}
-  // Voice praise after a short delay
-  setTimeout(() => playAudioClip("הי! כל הכבוד!"), 400);
 }
 
 const FeedbackOverlay = ({ type, onDone }) => {
