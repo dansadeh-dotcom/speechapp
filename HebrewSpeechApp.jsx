@@ -530,7 +530,7 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
     rec.start(); recRef.current = rec;
   };
 
-  const doCorrect = () => { setWaitingParent(false); setMascotState("excited"); onCorrect(); };
+  const doCorrect = () => { setWaitingParent(false); setMascotState("excited"); playCheer(); onCorrect(); };
   const doAlmost  = () => { setWaitingParent(false); setMascotState("almost");  onAlmost();  };
   const doRetry   = () => { setWaitingParent(false); setMascotState("idle");    onRetry();   };
 
@@ -667,6 +667,27 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
 // ============================================================
 // 🌈 FEEDBACK OVERLAY (correct / almost)
 // ============================================================
+function playCheer() {
+  // Short ascending beep using Web Audio API
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const freqs = [523, 659, 784, 1047];
+    freqs.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.12;
+      gain.gain.setValueAtTime(0.35, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.start(t); osc.stop(t + 0.25);
+    });
+  } catch {}
+  // Voice praise after a short delay
+  setTimeout(() => playAudioClip("הי! כל הכבוד!"), 400);
+}
+
 const FeedbackOverlay = ({ type, onDone }) => {
   const msgs = {
     correct: ["כל הכבוד! ⭐","איזה יופי! 🌟","אלופה! 🏆","אמרת ממש יפה! 💖"],
