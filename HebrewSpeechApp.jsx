@@ -193,128 +193,31 @@ const loadDaily    = () => loadJSON(LS_DAILY, {});
 const loadVoices   = () => loadJSON(LS_VOICES, {});
 
 // ============================================================
-// 🔊 TIMESTAMPED AUDIO PLAYBACK
+// 🔊 SPEECH SYNTHESIS PLAYBACK
 // ============================================================
-const AUDIO_FILE = "/audio/words.m4a";
-
-// Single shared audio element. iOS Safari requires audio.play() to be called
-// synchronously inside a user-gesture handler before any seeking works.
-// primeAudio() must be called from the first button tap to unlock it.
-let _sharedAudio = null;
-let activeClipTimer = null;
-
-function getSharedAudio() {
-  if (!_sharedAudio) {
-    _sharedAudio = new Audio(AUDIO_FILE);
-    _sharedAudio.preload = "auto";
-  }
-  return _sharedAudio;
-}
-
-// Call once from a direct user-gesture (e.g. the start button) to unlock iOS audio.
-function primeAudio() {
-  const a = getSharedAudio();
-  a.muted = true;
-  const p = a.play();
-  if (p) p.then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => {});
-  else { a.pause(); a.currentTime = 0; a.muted = false; }
-}
-
 function stopAudioClip() {
-  if (activeClipTimer) {
-    clearInterval(activeClipTimer);
-    activeClipTimer = null;
-  }
-  const a = _sharedAudio;
-  if (a && !a.paused) a.pause();
+  window.speechSynthesis && window.speechSynthesis.cancel();
 }
 
-function playAudioClip(start, end) {
-  if (typeof start !== "number" || typeof end !== "number") {
-    // No timestamp for this word — skip silently
-    return;
-  }
-  stopAudioClip();
-  const audio = getSharedAudio();
-  audio.muted = false;
-  audio.volume = 1;
-  audio.currentTime = start;
-  audio.play().catch((err) => console.error("Audio play failed:", err));
-  activeClipTimer = setInterval(() => {
-    if (audio.currentTime >= end) {
-      audio.pause();
-      clearInterval(activeClipTimer);
-      activeClipTimer = null;
-    }
-  }, 50);
+function primeAudio() {
+  // no-op for speechSynthesis (no unlock needed)
 }
 
-const getTimestampRange = (entry, level) => {
-  if (!entry) return { audioStart: null, audioEnd: null };
+function playAudioClip(text) {
+  if (!text || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = "he-IL";
+  utt.rate = 0.85;
+  utt.pitch = 1.1;
+  // prefer an Israeli Hebrew voice if available
+  const voices = window.speechSynthesis.getVoices();
+  const heVoice = voices.find(v => v.lang === "he-IL") || voices.find(v => v.lang.startsWith("he"));
+  if (heVoice) utt.voice = heVoice;
+  window.speechSynthesis.speak(utt);
+}
 
-  const levelKeys = level === 1
-    ? ["word", "level1", "1"]
-    : level === 2
-      ? ["level2", "phrase", "2"]
-      : ["level3", "sentence", "3"];
 
-  for (const key of levelKeys) {
-    const value = entry[key];
-    if (!value) continue;
-    if (typeof value.audioStart === "number" && typeof value.audioEnd === "number") {
-      return { audioStart: value.audioStart, audioEnd: value.audioEnd };
-    }
-    if (typeof value.start === "number" && typeof value.end === "number") {
-      return { audioStart: value.start, audioEnd: value.end };
-    }
-  }
-
-  if (level === 1 && typeof entry.audioStart === "number" && typeof entry.audioEnd === "number") {
-    return { audioStart: entry.audioStart, audioEnd: entry.audioEnd };
-  }
-
-  return { audioStart: null, audioEnd: null };
-};
-
-const normalizeAudioTimestamps = (rawTimestamps) => {
-  if (Array.isArray(rawTimestamps)) {
-    const normalized = {};
-    const flatWords = Object.values(WORD_DATA).flat();
-
-    flatWords.forEach((word, index) => {
-      const base = index * 3;
-      const wordClip = rawTimestamps[base];
-      const level2Clip = rawTimestamps[base + 1];
-      const level3Clip = rawTimestamps[base + 2];
-
-      normalized[word.id] = {
-        word: wordClip ? { start: wordClip.start, end: wordClip.end } : null,
-        level2: level2Clip ? { start: level2Clip.start, end: level2Clip.end } : null,
-        level3: level3Clip ? { start: level3Clip.start, end: level3Clip.end } : null,
-      };
-    });
-
-    return normalized;
-  }
-
-  return rawTimestamps || {};
-};
-
-const attachAudioRanges = (words, timestamps) => words.map((word) => {
-  const entry = timestamps[word.id];
-  const level1 = getTimestampRange(entry, 1);
-  const level2 = getTimestampRange(entry, 2);
-  const level3 = getTimestampRange(entry, 3);
-  return {
-    ...word,
-    audioStart: level1.audioStart,
-    audioEnd: level1.audioEnd,
-    level2AudioStart: level2.audioStart,
-    level2AudioEnd: level2.audioEnd,
-    level3AudioStart: level3.audioStart,
-    level3AudioEnd: level3.audioEnd,
-  };
-});
 
 // ============================================================
 // 🎙️ PARENT VOICE — recorded phrases stored as base64 audio
@@ -331,7 +234,7 @@ const PARENT_PHRASES = [
 const playParentVoice = (key, fallback) => {
   const v = loadVoices();
   if (v[key]) { try { new Audio(v[key]).play(); return; } catch {} }
-  playAudioClip(0, 1);
+  if (fallback) playAudioClip(fallback);
 };
 
 // ============================================================
@@ -598,8 +501,8 @@ const PracticeCard = ({ item, level, onCorrect, onAlmost, onRetry, sessionProgre
   }, [item.id, level]);
 
   const playCurrentPhrase = useCallback(() => {
-    playAudioClip(item.audioStart, item.audioEnd);
-  }, [item.audioStart, item.audioEnd]);
+    playAudioClip(current);
+  }, [current]);
 
   const prompt = useCallback(() => {
     setWaitingParent(false);
@@ -941,33 +844,13 @@ export default function App() {
   const [showSettings,    setShowSettings]   = useState(false);
   const [showVoices,      setShowVoices]     = useState(false);
   const [showDailyDone,   setShowDailyDone]  = useState(false);
-  const [audioTimestamps, setAudioTimestamps] = useState({});
   const [dailySuccesses,  setDailySuccesses] = useState(() => {
     const d = loadDaily(); return d[todayKey()] || 0;
   });
 
-  useEffect(() => {
-    fetch("/audio/audio_timestamps.json")
-      .then((res) => {
-        if (!res.ok) throw new Error("Missing audio_timestamps.json");
-        return res.json();
-      })
-      .then((data) => {
-        const normalized = normalizeAudioTimestamps(data);
-        console.log("timestamps loaded", Object.keys(normalized).length);
-        setAudioTimestamps(normalized);
-      })
-      .catch((error) => console.warn("Audio timestamps not loaded:", error));
-  }, []);
-
-  useEffect(() => {
-    if (items.length === 0) return;
-    setItems((prev) => attachAudioRanges(prev, audioTimestamps));
-  }, [audioTimestamps]);
-
   const selectCategory = (cat) => {
     setCategory(cat);
-    setItems(buildSession(attachAudioRanges(WORD_DATA[cat], audioTimestamps)));
+    setItems(buildSession(WORD_DATA[cat]));
     setItemIndex(0); setLevel(1); setMiniStars(0); setSessProgress(0);
     setScreen("practice");
   };
@@ -998,7 +881,7 @@ export default function App() {
       else {
         setLevel(1);
         if (itemIndex + 1 >= items.length) {
-          setItems(buildSession(attachAudioRanges(WORD_DATA[category], audioTimestamps))); setItemIndex(0);
+          setItems(buildSession(WORD_DATA[category])); setItemIndex(0);
         } else {
           setItemIndex(i => i + 1);
         }
