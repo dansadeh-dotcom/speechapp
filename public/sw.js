@@ -5,9 +5,9 @@
 
 const CACHE = "mdb-v3";
 const ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.json",
+  "/speechapp/",
+  "/speechapp/index.html",
+  "/speechapp/manifest.json",
   // Vite builds hashed JS/CSS — they are cached via fetch intercept below
 ];
 
@@ -33,7 +33,7 @@ self.addEventListener("fetch", (e) => {
   if (request.mode === "navigate") {
     // Always try network for HTML
     e.respondWith(
-      fetch(request).catch(() => caches.match("/index.html"))
+      fetch(request).catch(() => caches.match("/speechapp/index.html"))
     );
     return;
   }
