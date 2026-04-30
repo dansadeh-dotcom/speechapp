@@ -196,47 +196,75 @@ const loadVoices   = () => loadJSON(LS_VOICES, {});
 // 🔊 TIMESTAMPED AUDIO PLAYBACK
 // ============================================================
 const AUDIO_FILE = "/audio/words.m4a";
-let activeClipAudio = null;
+
+// Single shared audio element — reused across clips so iOS stays "unlocked"
+// after the first user-gesture play().
+let _sharedAudio = null;
 let activeClipTimer = null;
+
+function getSharedAudio() {
+  if (!_sharedAudio) {
+    _sharedAudio = new Audio(AUDIO_FILE);
+    _sharedAudio.preload = "auto";
+  }
+  return _sharedAudio;
+}
 
 function stopAudioClip() {
   if (activeClipTimer) {
     clearInterval(activeClipTimer);
     activeClipTimer = null;
   }
-  if (activeClipAudio) {
-    activeClipAudio.pause();
-    activeClipAudio = null;
-  }
+  const a = _sharedAudio;
+  if (a && !a.paused) a.pause();
 }
 
 function playAudioClip(start, end) {
   if (typeof start !== "number" || typeof end !== "number") {
-    alert("לא נמצא טיימסטמפ לקטע הזה ב-audio_timestamps.json");
+    // No timestamp for this word — skip silently (other categories not yet recorded)
     return;
   }
 
   stopAudioClip();
   console.log("playAudioClip", { start, end });
 
-  const audio = new Audio(AUDIO_FILE);
-  activeClipAudio = audio;
-  audio.volume = 1;
+  const audio = getSharedAudio();
 
-  // Direct tap-driven playback + timed stop for the selected clip.
-  audio.currentTime = start;
-  audio.play().catch((error) => {
-    console.error("Audio failed:", error);
-    alert("האודיו לא נטען. בדוק שהקובץ נמצא ב-public/audio/words.m4a");
-  });
+  const startClip = () => {
+    audio.currentTime = start;
+    audio.muted = false;
+    audio.volume = 1;
+    audio.play().catch((err) => console.error("Audio play failed:", err));
+    activeClipTimer = setInterval(() => {
+      if (audio.currentTime >= end || audio.paused || audio.ended) {
+        audio.pause();
+        clearInterval(activeClipTimer);
+        activeClipTimer = null;
+      }
+    }, 50);
+  };
 
-  activeClipTimer = setInterval(() => {
-    if (audio.currentTime >= end || audio.paused || audio.ended) {
-      audio.pause();
-      clearInterval(activeClipTimer);
-      activeClipTimer = null;
+  if (audio.readyState >= 2) {
+    // Audio is already loaded — seek directly (iOS allows this after first unlock)
+    startClip();
+  } else {
+    // First load: play muted to satisfy iOS gesture requirement,
+    // then seek to the real start once canplay fires.
+    audio.muted = true;
+    const p = audio.play();
+    if (p) {
+      p.then(() => {
+        startClip();
+      }).catch(() => {
+        // Fallback: try direct seek anyway
+        audio.muted = false;
+        startClip();
+      });
+    } else {
+      audio.muted = false;
+      startClip();
     }
-  }, 50);
+  }
 }
 
 const getTimestampRange = (entry, level) => {
